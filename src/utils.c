@@ -50,30 +50,24 @@ size_t varint_write_stream(uint8_t **buffer, size_t *left, uint64_t src) {
     return 0;
   }
 
+  // network order (in case 8 all cases run; case 4 skips 8; case 2 skips 4, 8;)
   switch (length) {
   case 8:
     (*buffer)[7] = (uint8_t)val;
     (*buffer)[6] = (uint8_t)(val >> 8);
     (*buffer)[5] = (uint8_t)(val >> 16);
     (*buffer)[4] = (uint8_t)(val >> 24);
-    (*buffer)[3] = (uint8_t)(val >> 32);
-    (*buffer)[2] = (uint8_t)(val >> 40);
-    (*buffer)[1] = (uint8_t)(val >> 48);
-    (*buffer)[0] = (uint8_t)(val >> 56);
-    break;
+    val >>= 32;
   case 4:
     (*buffer)[3] = (uint8_t)val;
     (*buffer)[2] = (uint8_t)(val >> 8);
-    (*buffer)[1] = (uint8_t)(val >> 16);
-    (*buffer)[0] = (uint8_t)(val >> 24);
-    break;
+    val >>= 16;
   case 2:
     (*buffer)[1] = (uint8_t)val;
     (*buffer)[0] = (uint8_t)(val >> 8);
-    break;
+    val >>= 8;
   case 1:
     (*buffer)[0] = (uint8_t)val;
-    break;
   }
   *buffer += length;
   *left -= length;
