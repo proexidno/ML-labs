@@ -208,25 +208,24 @@ typedef union {
 
 int packet_read_stream(uint8_t *buffer, size_t left, quic_headers_t headers);
 
-int parse_short_header_v1(uint8_t *buffer, size_t left,
-                          short_header_v1_t *header, uint8_t fb);
-int parse_long_header(uint8_t *buffer, size_t left, quic_headers_t headers,
-                      uint8_t fb);
+int read_short_header_v1(uint8_t *buffer, size_t left,
+                         short_header_v1_t *header, uint8_t fb);
+int read_long_header(uint8_t *buffer, size_t left, quic_headers_t headers,
+                     uint8_t fb);
 
-int parse_version_header(uint8_t *buffer, size_t left,
-                         version_negotiation_header_t *header, uint8_t fb);
-int parse_long_header_v1(uint8_t *buffer, size_t left, long_header_v1_t *header,
-                         uint8_t fb);
+int read_version_header(uint8_t *buffer, size_t left,
+                        version_negotiation_header_t *header, uint8_t fb);
+int read_long_header_v1(uint8_t *buffer, size_t left, long_header_v1_t *header,
+                        uint8_t fb);
 
-int parse_init_header_v1(uint8_t *buffer, size_t left,
-                         init_v1_packet_info_t *header_info, uint8_t fb);
-int parse_zero_rtt_header_v1(uint8_t *buffer, size_t left,
-                             zero_rtt_v1_packet_info_t *header_info,
+int read_init_header_v1(uint8_t *buffer, size_t left,
+                        init_v1_packet_info_t *header_info, uint8_t fb);
+int read_zero_rtt_header_v1(uint8_t *buffer, size_t left,
+                            zero_rtt_v1_packet_info_t *header_info, uint8_t fb);
+int read_handshake_header_v1(uint8_t *buffer, size_t left,
+                             handshake_v1_packet_info_t *header_info,
                              uint8_t fb);
-int parse_handshake_header_v1(uint8_t *buffer, size_t left,
-                              handshake_v1_packet_info_t *header_info,
-                              uint8_t fb);
-int parse_retry_header_v1(uint8_t *buffer, size_t left,
-                          retry_v1_packet_info_t *header_info);
+int read_retry_header_v1(uint8_t *buffer, size_t left,
+                         retry_v1_packet_info_t *header_info);
 
 #endif // HEADER_H

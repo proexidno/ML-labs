@@ -1,6 +1,7 @@
 #include "header.h"
 #include "utils.h"
 #include "varint.h"
+#include <bits/pthreadtypes.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -16,7 +17,7 @@
  */
 int packet_read_stream(uint8_t *buffer, size_t left, quic_headers_t headers) {
   if (headers.version_negotiation_header != NULL) {
-    return DISCARD_PACKET; // Discard
+    return DISCARD_PACKET;
   }
 
   int exit_code;
@@ -33,8 +34,7 @@ int packet_read_stream(uint8_t *buffer, size_t left, quic_headers_t headers) {
   switch (header_type) {
   case 0: // short header
     headers.short_header_v1 = calloc(1, sizeof(short_header_v1_t));
-    exit_code =
-        parse_short_header_v1(buffer, left, headers.short_header_v1, fb);
+    exit_code = read_short_header_v1(buffer, left, headers.short_header_v1, fb);
     if (exit_code < 0) {
       free(headers.short_header_v1);
       headers.short_header_v1 = NULL;
@@ -43,7 +43,7 @@ int packet_read_stream(uint8_t *buffer, size_t left, quic_headers_t headers) {
     return 1;
     break;
   case 0x80: // long header
-    exit_code = parse_long_header(buffer, left, headers, fb);
+    exit_code = read_long_header(buffer, left, headers, fb);
     return exit_code;
     break;
   default:
@@ -51,17 +51,9 @@ int packet_read_stream(uint8_t *buffer, size_t left, quic_headers_t headers) {
   };
 }
 
-int parse_short_header_v1(uint8_t *buffer, size_t left,
-                          short_header_v1_t *header, uint8_t fb) {
-  uint8_t reserved = (fb & 0x18); // they are protected
-  if (reserved != 0) {            // reserved bits
-    return DISCARD_PACKET;
-  }
-
+int read_short_header_v1(uint8_t *buffer, size_t left,
+                         short_header_v1_t *header, uint8_t fb) {
   header->spin_bit = fb & 0x20 >> 5;
-  header->key_phase = fb & 0x4 >> 2;              // protected 0x7
-  header->packet_number_length = (fb & 0x03) + 1; // protected 0x7
-
   size_t dst_conn_id_len = 20; // TODO: size of dst_conn_id instead of 20
 
   if (stream_read_n_bytes(&buffer, &left, header->dst_conn_id,
@@ -69,19 +61,51 @@ int parse_short_header_v1(uint8_t *buffer, size_t left,
     return DISCARD_PACKET;
   }
 
+  uint8_t *pointer = buffer + 4;
+  size_t l = left;
+  const size_t decrypt_sample_length = 16;
+  uint8_t decrypt_sample[decrypt_sample_length];
+
+  if (stream_read_n_bytes(&pointer, &l, decrypt_sample,
+                          decrypt_sample_length)) {
+    return DISCARD_PACKET;
+  }
+
+  // TODO: Generate mask using decrypt sample
+
+  uint8_t mask[5] = {0}; // protection mask
+  fb ^= mask[0] & 0x1f;
+
+  uint8_t reserved = (fb & 0x18);
+  if (reserved != 0) { // reserved bits
+    return DISCARD_PACKET;
+  }
+
+  header->key_phase = fb & 0x4 >> 2;
+  header->packet_number_length = (fb & 0x03) + 1;
+
   header->frames.packet_number = 0;
+  l = left; // saving for mask so that we never make l < packet number length
   if (stream_read_n_bytes(&buffer, &left,
                           (uint8_t *)&header->frames.packet_number,
                           header->packet_number_length)) {
     return DISCARD_PACKET;
   }
+
+  // packet number decryption
+  uint32_t packet_number_mask = 0;
+  pointer = &mask[1];
+  stream_read_n_bytes((uint8_t **)&pointer, &l, (uint8_t *)&packet_number_mask,
+                      header->packet_number_length);
+  header->frames.packet_number ^= packet_number_mask;
+
   // TODO: read frames
 
   return 1;
 }
 
-int parse_long_header(uint8_t *buffer, size_t left, quic_headers_t headers,
-                      uint8_t fb) {
+int read_long_header(uint8_t *buffer, size_t left, quic_headers_t headers,
+                     uint8_t fb) {
   uint32_t version = 0;
   if (stream_read_n_bytes(&buffer, &left, (uint8_t *)&version, sizeof(version)))
     return DISCARD_PACKET;
@@ -91,8 +115,8 @@ int parse_long_header(uint8_t *buffer, size_t left, quic_headers_t headers,
   case 0:
     headers.version_negotiation_header =
         calloc(1, sizeof(version_negotiation_header_t));
-    exit_code = parse_version_header(buffer, left,
-                                     headers.version_negotiation_header, fb);
+    exit_code = read_version_header(buffer, left,
+                                    headers.version_negotiation_header, fb);
     if (exit_code < 0) {
       free(headers.version_negotiation_header);
       headers.long_header_v1 = NULL;
@@ -103,7 +127,7 @@ int parse_long_header(uint8_t *buffer, size_t left, quic_headers_t headers,
   case 1:
     headers.long_header_v1 = calloc(1, sizeof(long_header_v1_t));
     headers.long_header_v1->version = 1;
-    exit_code = parse_long_header_v1(buffer, left, headers.long_header_v1, fb);
+    exit_code = read_long_header_v1(buffer, left, headers.long_header_v1, fb);
     if (exit_code < 0) {
       free(headers.long_header_v1);
       headers.long_header_v1 = NULL;
@@ -112,12 +136,12 @@ int parse_long_header(uint8_t *buffer, size_t left, quic_headers_t headers,
     return 1;
     break;
   default:
-    return UNSUPPORTED_VERSION; // Unsupported version
+    return UNSUPPORTED_VERSION;
   }
 }
 
-int parse_long_header_v1(uint8_t *buffer, size_t left, long_header_v1_t *header,
-                         uint8_t fb) {
+int read_long_header_v1(uint8_t *buffer, size_t left, long_header_v1_t *header,
+                        uint8_t fb) {
 
   if (stream_read_n_bytes(&buffer, &left, &header->dst_conn_id_length,
                           sizeof(header->dst_conn_id_length)))
@@ -147,8 +171,7 @@ int parse_long_header_v1(uint8_t *buffer, size_t left, long_header_v1_t *header,
   switch (header->long_header_type) {
   case QUIC_PACKET_INITIAL:
     header->init_v1_packet = calloc(1, sizeof(init_v1_packet_info_t));
-    header->init_v1_packet->packet_number_length = (fb & 0x03) + 1;
-    exit_code = parse_init_header_v1(buffer, left, header->init_v1_packet);
+    exit_code = read_init_header_v1(buffer, left, header->init_v1_packet, fb);
     if (exit_code < 0) {
       free(header->init_v1_packet);
       header->handshake_v1_packet = NULL;
@@ -159,7 +182,7 @@ int parse_long_header_v1(uint8_t *buffer, size_t left, long_header_v1_t *header,
     header->zero_rtt_v1_packet = calloc(1, sizeof(zero_rtt_v1_packet_info_t));
     header->zero_rtt_v1_packet->packet_number_length = (fb & 0x03) + 1;
     exit_code =
-        parse_zero_rtt_header_v1(buffer, left, header->zero_rtt_v1_packet);
+        read_zero_rtt_header_v1(buffer, left, header->zero_rtt_v1_packet, fb);
     if (exit_code < 0) {
       free(header->zero_rtt_v1_packet);
       header->handshake_v1_packet = NULL;
@@ -170,7 +193,7 @@ int parse_long_header_v1(uint8_t *buffer, size_t left, long_header_v1_t *header,
     header->handshake_v1_packet = calloc(1, sizeof(handshake_v1_packet_info_t));
     header->handshake_v1_packet->packet_number_length = (fb & 0x03) + 1;
     exit_code =
-        parse_handshake_header_v1(buffer, left, header->handshake_v1_packet);
+        read_handshake_header_v1(buffer, left, header->handshake_v1_packet, fb);
     if (exit_code < 0) {
       free(header->handshake_v1_packet);
       header->handshake_v1_packet = NULL;
@@ -179,7 +202,7 @@ int parse_long_header_v1(uint8_t *buffer, size_t left, long_header_v1_t *header,
     break;
   case QUIC_PACKET_RETRY:
     header->retry_v1_packet = calloc(1, sizeof(retry_v1_packet_info_t));
-    exit_code = parse_retry_header_v1(buffer, left, header->retry_v1_packet);
+    exit_code = read_retry_header_v1(buffer, left, header->retry_v1_packet);
     if (exit_code < 0) {
       free(header->retry_v1_packet);
       header->retry_v1_packet = NULL;
@@ -190,8 +213,8 @@ int parse_long_header_v1(uint8_t *buffer, size_t left, long_header_v1_t *header,
   return 1;
 }
 
-int parse_version_header(uint8_t *buffer, size_t left,
-                         version_negotiation_header_t *header, uint8_t fb) {
+int read_version_header(uint8_t *buffer, size_t left,
+                        version_negotiation_header_t *header, uint8_t fb) {
   if (fb != 0x80) {
     return DISCARD_PACKET;
   }
@@ -237,7 +260,7 @@ int parse_version_header(uint8_t *buffer, size_t left,
           header->supported_versions, header->supported_versions_length *
                                           sizeof(*header->supported_versions));
       if (header->supported_versions == NULL) {
-        return MALLOC_FAIL; // Fatal out of memory
+        return MALLOC_FAIL;
       }
     }
   }
@@ -253,12 +276,8 @@ int parse_version_header(uint8_t *buffer, size_t left,
   return 0;
 }
 
-int parse_init_header_v1(uint8_t *buffer, size_t left,
-                         init_v1_packet_info_t *header_info, uint8_t fb) {
-  uint8_t reserved = (fb & 0x18); // they are protected
-  if (reserved != 0) {            // reserved bits
-    return DISCARD_PACKET;
-  }
+int read_init_header_v1(uint8_t *buffer, size_t left,
+                        init_v1_packet_info_t *header_info, uint8_t fb) {
 
   varint_read_stream(&buffer, &left, &header_info->token_length);
   header_info->token =
@@ -272,10 +291,39 @@ int parse_init_header_v1(uint8_t *buffer, size_t left,
   }
 
   if (varint_read_stream(&buffer, &left, &header_info->length)) {
+    free(header_info->token);
+    header_info->token = NULL;
     return DISCARD_PACKET;
   }
 
+  uint8_t *pointer = buffer + 4;
+  size_t l = left;
+  const size_t decrypt_sample_length = 16;
+  uint8_t decrypt_sample[decrypt_sample_length];
+
+  if (stream_read_n_bytes(&pointer, &l, decrypt_sample,
+                          decrypt_sample_length)) {
+    free(header_info->token);
+    header_info->token = NULL;
+    return DISCARD_PACKET;
+  }
+
+  // TODO: Generate mask using decrypt sample
+
+  uint8_t mask[5] = {0}; // protection mask
+  fb ^= mask[0] & 0x0f;
+
+  uint8_t reserved = (fb & 0x0c);
+  if (reserved != 0) { // reserved bits
+    free(header_info->token);
+    header_info->token = NULL;
+    return DISCARD_PACKET;
+  }
+
+  header_info->packet_number_length = (fb & 0x03) + 1;
+
   header_info->frames.packet_number = 0;
+  l = left; // saving for mask so that we never make l < packet number length
   if (stream_read_n_bytes(&buffer, &left,
                           (uint8_t *)&header_info->frames.packet_number,
                           header_info->packet_number_length)) {
@@ -283,52 +331,114 @@ int parse_init_header_v1(uint8_t *buffer, size_t left,
     header_info->token = NULL;
     return DISCARD_PACKET;
   }
+
+  // packet number decryption
+  uint32_t packet_number_mask = 0;
+  pointer = &mask[1];
+  stream_read_n_bytes((uint8_t **)pointer, &l, (uint8_t *)&packet_number_mask,
+                      header_info->packet_number_length);
+  header_info->frames.packet_number ^= packet_number_mask;
+
   // TODO: read frames
   return 0;
 }
 
-int parse_zero_rtt_header_v1(uint8_t *buffer, size_t left,
-                             zero_rtt_v1_packet_info_t *header_info,
+int read_zero_rtt_header_v1(uint8_t *buffer, size_t left,
+                            zero_rtt_v1_packet_info_t *header_info,
+                            uint8_t fb) {
+  if (varint_read_stream(&buffer, &left, &header_info->length)) {
+    return DISCARD_PACKET;
+  }
+
+  uint8_t *pointer = buffer + 4;
+  size_t l = left;
+  const size_t decrypt_sample_length = 16;
+  uint8_t decrypt_sample[decrypt_sample_length];
+
+  if (stream_read_n_bytes(&pointer, &l, decrypt_sample,
+                          decrypt_sample_length)) {
+    return DISCARD_PACKET;
+  }
+
+  // TODO: Generate mask using decrypt sample
+
+  uint8_t mask[5] = {0}; // protection mask
+  fb ^= mask[0] & 0x0f;
+
+  uint8_t reserved = (fb & 0x0c);
+  if (reserved != 0) { // reserved bits
+    return DISCARD_PACKET;
+  }
+
+  header_info->packet_number_length = (fb & 0x03) + 1;
+
+  header_info->frames.packet_number = 0;
+  l = left; // saving for mask so that we never make l < packet number length
+  if (stream_read_n_bytes(&buffer, &left,
+                          (uint8_t *)&header_info->frames.packet_number,
+                          header_info->packet_number_length)) {
+    return DISCARD_PACKET;
+  }
+
+  // packet number decryption
+  uint32_t packet_number_mask = 0;
+  pointer = &mask[1];
+  stream_read_n_bytes((uint8_t **)pointer, &l, (uint8_t *)&packet_number_mask,
+                      header_info->packet_number_length);
+  header_info->frames.packet_number ^= packet_number_mask;
+
+  // TODO: read frames
+  return 0;
+}
+int read_handshake_header_v1(uint8_t *buffer, size_t left,
+                             handshake_v1_packet_info_t *header_info,
                              uint8_t fb) {
-  uint8_t reserved = (fb & 0x18); // they are protected
-  if (reserved != 0) {            // reserved bits
-    return DISCARD_PACKET;
-  }
   if (varint_read_stream(&buffer, &left, &header_info->length)) {
     return DISCARD_PACKET;
   }
 
+  uint8_t *pointer = buffer + 4;
+  size_t l = left;
+  const size_t decrypt_sample_length = 16;
+  uint8_t decrypt_sample[decrypt_sample_length];
+
+  if (stream_read_n_bytes(&pointer, &l, decrypt_sample,
+                          decrypt_sample_length)) {
+    return DISCARD_PACKET;
+  }
+
+  // TODO: Generate mask using decrypt sample
+
+  uint8_t mask[5] = {0}; // protection mask
+  fb ^= mask[0] & 0x0f;
+
+  uint8_t reserved = (fb & 0x0c);
+  if (reserved != 0) { // reserved bits
+    return DISCARD_PACKET;
+  }
+
+  header_info->packet_number_length = (fb & 0x03) + 1;
+
   header_info->frames.packet_number = 0;
+  l = left; // saving for mask so that we never make l < packet number length
   if (stream_read_n_bytes(&buffer, &left,
                           (uint8_t *)&header_info->frames.packet_number,
                           header_info->packet_number_length)) {
     return DISCARD_PACKET;
   }
-  // TODO: read frames
-  return 0;
-}
-int parse_handshake_header_v1(uint8_t *buffer, size_t left,
-                              handshake_v1_packet_info_t *header_info,
-                              uint8_t fb) {
-  uint8_t reserved = (fb & 0x18); // they are protected
-  if (reserved != 0) {            // reserved bits
-    return DISCARD_PACKET;
-  }
-  if (varint_read_stream(&buffer, &left, &header_info->length)) {
-    return DISCARD_PACKET;
-  }
 
-  header_info->frames.packet_number = 0;
-  if (stream_read_n_bytes(&buffer, &left,
-                          (uint8_t *)&header_info->frames.packet_number,
-                          header_info->packet_number_length)) {
-    return DISCARD_PACKET;
-  }
+  // packet number decryption
+  uint32_t packet_number_mask = 0;
+  pointer = &mask[1];
+  stream_read_n_bytes((uint8_t **)pointer, &l, (uint8_t *)&packet_number_mask,
+                      header_info->packet_number_length);
+  header_info->frames.packet_number ^= packet_number_mask;
+
   // TODO: read frames
   return 0;
 }
-int parse_retry_header_v1(uint8_t *buffer, size_t left,
-                          retry_v1_packet_info_t *header_info) {
+int read_retry_header_v1(uint8_t *buffer, size_t left,
+                         retry_v1_packet_info_t *header_info) {
   if (left <= 16) {
     return DISCARD_PACKET;
   }
