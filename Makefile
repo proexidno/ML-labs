@@ -13,7 +13,7 @@ lib/$(LIBRARY): $(OFILES)
 	ar rcs $@ $^
 
 %.o: %.c
-	gcc -c $(CFLAGS) -o $@ $^
+	gcc -c $(CFLAGS) -Isrc/ -o $@ $^
 
 clean:
 	rm -f $(OFILES) lib/$(LIBRARY)
