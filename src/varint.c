@@ -11,6 +11,7 @@ int varint_read_stream(uint8_t **buffer, size_t *left, varint_t *dst) {
   }
   size_t length = 1 << (**buffer >> 6); // in bytes
 
+  *dst = 0;
   if (stream_read_n_bytes(buffer, left, ((uint8_t *)dst), length)) {
     return 1;
   }

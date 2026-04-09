@@ -2,7 +2,7 @@
 #include <stdint.h>
 
 /*
- * Needs
+ * Needs zeroed dst pointer if count is not full size of the integer
  */
 int stream_read_n_bytes(uint8_t **buffer, size_t *left, uint8_t *dst,
                         size_t count) {
