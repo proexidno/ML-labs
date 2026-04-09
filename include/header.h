@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #define QUIC_VERSION 0x00000001
+
 typedef enum {
   QUIC_PACKET_INITIAL = 0x00,
   QUIC_PACKET_0RTT = 0x01,
@@ -32,11 +33,11 @@ typedef struct {
  * }
  */
 typedef struct {
-  uint8_t dst_conn_id_len; // in bytes
+  uint8_t dst_conn_id_length; // in bytes
   uint8_t dst_conn_id[255];
-  uint8_t src_conn_id_len; // in bytes
+  uint8_t src_conn_id_length; // in bytes
   uint8_t src_conn_id[255];
-  size_t supported_versions_len;
+  size_t supported_versions_length;
   uint32_t *supported_versions;
 } version_negotiation_header_t;
 
@@ -59,8 +60,9 @@ typedef struct {
  *   Packet Payload (8..),
  * }
  */
-
 typedef struct {
+  uint8_t packet_number_length;
+
   varint_t token_length;
   uint8_t *token;
   varint_t length;
@@ -84,6 +86,8 @@ typedef struct {
  * }
  */
 typedef struct {
+  uint8_t packet_number_length;
+
   varint_t token_length;
   uint8_t *token;
   varint_t length;
@@ -108,6 +112,8 @@ typedef struct {
  * }
  */
 typedef struct {
+  uint8_t packet_number_length;
+
   varint_t token_length;
   uint8_t *token;
   varint_t length;
@@ -131,6 +137,7 @@ typedef struct {
  * }
  */
 typedef struct {
+  uint64_t retry_token_length;
   uint8_t *retry_token;
   uint8_t retry_integrity_tag[16];
 } retry_v1_packet_info_t;
@@ -174,9 +181,9 @@ typedef struct {
 typedef struct {
   quic_long_header_type_t long_header_type;
   uint32_t version;
-  uint8_t dst_conn_id_len; // in bytes
+  uint8_t dst_conn_id_length; // in bytes
   uint8_t dst_conn_id[20];
-  uint8_t src_conn_id_len; // in bytes
+  uint8_t src_conn_id_length; // in bytes
   uint8_t src_conn_id[20];
   union {
     init_v1_packet_info_t *init_v1_packet;
@@ -186,20 +193,40 @@ typedef struct {
   };
 } long_header_v1_t;
 
+/*
+ * Helper union for packet_read_stream function
+ */
 typedef union {
   version_negotiation_header_t *version_negotiation_header;
   short_header_v1_t *short_header_v1;
   long_header_v1_t *long_header_v1;
 } quic_headers_t;
 
+#define DISCARD_PACKET -1
+#define UNSUPPORTED_VERSION -2
+#define MALLOC_FAIL -3
+
 int packet_read_stream(uint8_t *buffer, size_t left, quic_headers_t headers);
-int format_short_header_v1(uint8_t *buffer, size_t left,
-                           short_header_v1_t *header, uint8_t fb);
-int format_long_header(uint8_t *buffer, size_t left, quic_headers_t headers,
-                       uint8_t fb);
-int format_version_header(uint8_t *buffer, size_t left,
-                          version_negotiation_header_t *header, uint8_t fb);
-int format_long_header_v1(uint8_t *buffer, size_t left,
-                          long_header_v1_t *header, uint8_t fb);
+
+int parse_short_header_v1(uint8_t *buffer, size_t left,
+                          short_header_v1_t *header, uint8_t fb);
+int parse_long_header(uint8_t *buffer, size_t left, quic_headers_t headers,
+                      uint8_t fb);
+
+int parse_version_header(uint8_t *buffer, size_t left,
+                         version_negotiation_header_t *header, uint8_t fb);
+int parse_long_header_v1(uint8_t *buffer, size_t left, long_header_v1_t *header,
+                         uint8_t fb);
+
+int parse_init_header_v1(uint8_t *buffer, size_t left,
+                         init_v1_packet_info_t *header_info, uint8_t fb);
+int parse_zero_rtt_header_v1(uint8_t *buffer, size_t left,
+                             zero_rtt_v1_packet_info_t *header_info,
+                             uint8_t fb);
+int parse_handshake_header_v1(uint8_t *buffer, size_t left,
+                              handshake_v1_packet_info_t *header_info,
+                              uint8_t fb);
+int parse_retry_header_v1(uint8_t *buffer, size_t left,
+                          retry_v1_packet_info_t *header_info);
 
 #endif // HEADER_H
