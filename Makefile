@@ -4,6 +4,7 @@ OFILES := $(patsubst %.c,%.o,$(SOURCES))
 LIBRARY := libzuquic.a
 
 CFLAGS := -Iinclude/
+OFLAGS := -Isrc/ -Wall -Werror $(CFLAGS)
 OUTFLAGS := -Llib -lzuquic $(CFLAGS)
 
 %: lib/$(LIBRARY) %.c
