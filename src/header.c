@@ -9,10 +9,13 @@
 
 /*
  * Reads QUIC packet from given buffer
+ * Changes buffer and left in-place
  *
  * Headers should be initialized as NULL
+ * To free header, call free_header with return value and headers
+ * You should not free headers yourself
  *
- * Returns negative value if error occured
+ * Returns negative value if error has occured
  *
  * Returns 0 if version negotiation packet is read
  * Returns 1 if short header v1 is read
@@ -133,7 +136,7 @@ int read_long_header(uint8_t **buffer, size_t *left, quic_headers_t *headers,
       headers->long_header_v1 = NULL;
       return exit_code;
     }
-    return 1;
+    return 2;
     break;
   default:
     return UNSUPPORTED_VERSION;
@@ -431,8 +434,8 @@ int read_retry_header_v1(uint8_t **buffer, size_t *left,
     return DISCARD_PACKET;
   }
   header_info->retry_token_length = *left - integrity_tag_length;
-  header_info->retry_token =
-      calloc(header_info->retry_token_length, sizeof(uint8_t));
+  header_info->retry_token = calloc(header_info->retry_token_length,
+                                    sizeof(*header_info->retry_token));
   if (stream_read_n_bytes(buffer, left, header_info->retry_token,
                           integrity_tag_length)) {
     free(header_info->retry_token);
@@ -440,12 +443,60 @@ int read_retry_header_v1(uint8_t **buffer, size_t *left,
     return DISCARD_PACKET;
   }
 
-  if (stream_read_n_bytes(buffer, left,
-                          (uint8_t *)header_info->retry_integrity_tag,
+  if (stream_read_n_bytes(buffer, left, header_info->retry_integrity_tag,
                           integrity_tag_length)) {
     free(header_info->retry_token);
     header_info->retry_token = NULL;
     return DISCARD_PACKET;
   }
   return 0;
+}
+
+void free_header(int type, quic_headers_t *headers) {
+  if (type < 0 || headers == NULL || headers->freable == NULL)
+    return;
+
+  switch (type) {
+  case 0: { // VERSION_NEGOTIATION
+    version_negotiation_header_t *header = headers->version_negotiation_header;
+    if (header->supported_versions != NULL) {
+      free(header->supported_versions);
+    }
+    break;
+  }
+  case 1: // SHORT_HEADER_V1
+    break;
+  case 2: { // LONG_HEADER_V1
+    long_header_v1_t *header = headers->long_header_v1;
+    switch (header->long_header_type) {
+    case QUIC_PACKET_INITIAL: {
+      init_v1_packet_info_t *header_info = header->init_v1_packet;
+      if (header_info->token != NULL)
+        free(header_info->token);
+      break;
+    }
+    case QUIC_PACKET_0RTT: {
+      zero_rtt_v1_packet_info_t *header_info = header->zero_rtt_v1_packet;
+      if (header_info->token != NULL)
+        free(header_info->token);
+      break;
+    }
+    case QUIC_PACKET_HANDSHAKE: {
+      handshake_v1_packet_info_t *header_info = header->handshake_v1_packet;
+      if (header_info->token != NULL)
+        free(header_info->token);
+      break;
+    }
+    case QUIC_PACKET_RETRY: {
+      retry_v1_packet_info_t *header_info = header->retry_v1_packet;
+      if (header_info->retry_token != NULL)
+        free(header_info->retry_token);
+      break;
+    }
+    }
+    break;
+  }
+  }
+
+  free(headers->freable);
 }

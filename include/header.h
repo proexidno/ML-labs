@@ -197,11 +197,9 @@ typedef union {
   version_negotiation_header_t *version_negotiation_header;
   short_header_v1_t *short_header_v1;
   long_header_v1_t *long_header_v1;
-} quic_headers_t;
 
-#define DISCARD_PACKET -1
-#define UNSUPPORTED_VERSION -2
-#define MALLOC_FAIL -3
+  void *freable;
+} quic_headers_t;
 
 int header_read_stream(uint8_t **buffer, size_t *left, quic_headers_t *headers);
 
@@ -224,5 +222,7 @@ int read_handshake_header_v1(uint8_t **buffer, size_t *left,
                              uint8_t fb);
 int read_retry_header_v1(uint8_t **buffer, size_t *left,
                          retry_v1_packet_info_t *header_info);
+
+void free_header(int type, quic_headers_t *headers);
 
 #endif // HEADER_H
