@@ -1,4 +1,5 @@
 #include "header.h"
+#include "errors.h"
 #include "utils.h"
 #include "varint.h"
 #include <bits/pthreadtypes.h>
@@ -87,7 +88,6 @@ int read_short_header_v1(uint8_t **buffer, size_t *left,
   header->key_phase = fb & 0x4 >> 2;
   header->packet_number_length = (fb & 0x03) + 1;
 
-  header->packet_number = 0;
   l = *left; // saving for mask so that we never make l < packet number length
   if (stream_read_n_bytes(buffer, left, (uint8_t *)&header->packet_number,
                           header->packet_number_length)) {
@@ -150,7 +150,7 @@ int read_long_header_v1(uint8_t **buffer, size_t *left,
     return DISCARD_PACKET;
   }
 
-  if (stream_read_n_bytes(buffer, left, (uint8_t *)&header->dst_conn_id,
+  if (stream_read_n_bytes(buffer, left, header->dst_conn_id,
                           header->dst_conn_id_length))
     return DISCARD_PACKET;
 
@@ -161,7 +161,7 @@ int read_long_header_v1(uint8_t **buffer, size_t *left,
     return DISCARD_PACKET;
   }
 
-  if (stream_read_n_bytes(buffer, left, (uint8_t *)&header->src_conn_id,
+  if (stream_read_n_bytes(buffer, left, header->src_conn_id,
                           header->src_conn_id_length))
     return DISCARD_PACKET;
 
@@ -218,13 +218,13 @@ int read_version_header(uint8_t **buffer, size_t *left,
                           sizeof(header->dst_conn_id_length)))
     return DISCARD_PACKET;
 
-  if (stream_read_n_bytes(buffer, left, (uint8_t *)&header->dst_conn_id,
+  if (stream_read_n_bytes(buffer, left, header->dst_conn_id,
                           header->dst_conn_id_length))
     return DISCARD_PACKET;
   if (stream_read_n_bytes(buffer, left, &header->src_conn_id_length,
                           sizeof(header->src_conn_id_length)))
     return DISCARD_PACKET;
-  if (stream_read_n_bytes(buffer, left, (uint8_t *)&header->src_conn_id,
+  if (stream_read_n_bytes(buffer, left, header->src_conn_id,
                           header->src_conn_id_length))
     return DISCARD_PACKET;
 
@@ -235,7 +235,7 @@ int read_version_header(uint8_t **buffer, size_t *left,
     header->supported_versions_length =
         *left / sizeof(*header->supported_versions);
   } else {
-    header->supported_versions_length = 0;
+    header->supported_versions_length = 64;
   }
   header->supported_versions = calloc(header->supported_versions_length,
                                       sizeof(*header->supported_versions));
@@ -317,7 +317,6 @@ int read_init_header_v1(uint8_t **buffer, size_t *left,
 
   header_info->packet_number_length = (fb & 0x03) + 1;
 
-  header_info->packet_number = 0;
   l = *left; // saving for mask so that we never make l < packet number length
   if (stream_read_n_bytes(buffer, left, (uint8_t *)&header_info->packet_number,
                           header_info->packet_number_length)) {
@@ -365,7 +364,6 @@ int read_zero_rtt_header_v1(uint8_t **buffer, size_t *left,
 
   header_info->packet_number_length = (fb & 0x03) + 1;
 
-  header_info->packet_number = 0;
   l = *left; // saving for mask so that we never make l < packet number length
   if (stream_read_n_bytes(buffer, left, (uint8_t *)&header_info->packet_number,
                           header_info->packet_number_length)) {
@@ -410,7 +408,6 @@ int read_handshake_header_v1(uint8_t **buffer, size_t *left,
 
   header_info->packet_number_length = (fb & 0x03) + 1;
 
-  header_info->packet_number = 0;
   l = *left; // saving for mask so that we never make l < packet number length
   if (stream_read_n_bytes(buffer, left, (uint8_t *)&header_info->packet_number,
                           header_info->packet_number_length)) {

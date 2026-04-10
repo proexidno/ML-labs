@@ -1,0 +1,10 @@
+#ifndef ERRORS_H
+#define ERRORS_H
+
+#define DISCARD_PACKET -1
+#define UNSUPPORTED_VERSION -2
+#define MALLOC_FAIL -3
+#define FRAME_ENCODING_ERROR -4
+#define STREAM_LIMIT_ERROR -4
+
+#endif // ERRORS_H
