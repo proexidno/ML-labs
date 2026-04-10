@@ -1,6 +1,5 @@
 #ifndef HEADER_H
 #define HEADER_H
-#include "frames.h"
 #include "varint.h"
 #include <stddef.h>
 #include <stdint.h>
@@ -13,12 +12,6 @@ typedef enum {
   QUIC_PACKET_HANDSHAKE = 0x02,
   QUIC_PACKET_RETRY = 0x03
 } quic_long_header_type_t;
-
-typedef struct {
-  uint32_t packet_number; // 8-32 bits length specified in header's form two
-                          // least significant bits
-  frame_t *frames;        // list of frames
-} packets_info_t;
 
 /*
  * Version Negotiation Packet {
@@ -66,7 +59,8 @@ typedef struct {
   varint_t token_length;
   uint8_t *token;
   varint_t length;
-  packets_info_t frames;
+  uint32_t packet_number; // 8-32 bits length specified in header's form two
+                          // least significant bits
 } init_v1_packet_info_t;
 
 /* 0-RTT Packet {
@@ -91,7 +85,8 @@ typedef struct {
   varint_t token_length;
   uint8_t *token;
   varint_t length;
-  packets_info_t frames;
+  uint32_t packet_number; // 8-32 bits length specified in header's form two
+                          // least significant bits
 } zero_rtt_v1_packet_info_t;
 
 /*
@@ -118,7 +113,8 @@ typedef struct {
   uint8_t *token;
   varint_t length;
 
-  packets_info_t frames;
+  uint32_t packet_number; // 8-32 bits length specified in header's form two
+                          // least significant bits
 } handshake_v1_packet_info_t;
 
 /*
@@ -161,7 +157,8 @@ typedef struct {
   uint8_t packet_number_length;
 
   uint8_t dst_conn_id[20];
-  packets_info_t frames;
+  uint32_t packet_number; // 8-32 bits length specified in header's form two
+                          // least significant bits
 } short_header_v1_t;
 
 /*
@@ -206,26 +203,26 @@ typedef union {
 #define UNSUPPORTED_VERSION -2
 #define MALLOC_FAIL -3
 
-int packet_read_stream(uint8_t *buffer, size_t left, quic_headers_t headers);
+int header_read_stream(uint8_t **buffer, size_t *left, quic_headers_t *headers);
 
-int read_short_header_v1(uint8_t *buffer, size_t left,
+int read_short_header_v1(uint8_t **buffer, size_t *left,
                          short_header_v1_t *header, uint8_t fb);
-int read_long_header(uint8_t *buffer, size_t left, quic_headers_t headers,
+int read_long_header(uint8_t **buffer, size_t *left, quic_headers_t *headers,
                      uint8_t fb);
 
-int read_version_header(uint8_t *buffer, size_t left,
+int read_version_header(uint8_t **buffer, size_t *left,
                         version_negotiation_header_t *header, uint8_t fb);
-int read_long_header_v1(uint8_t *buffer, size_t left, long_header_v1_t *header,
-                        uint8_t fb);
+int read_long_header_v1(uint8_t **buffer, size_t *left,
+                        long_header_v1_t *header, uint8_t fb);
 
-int read_init_header_v1(uint8_t *buffer, size_t left,
+int read_init_header_v1(uint8_t **buffer, size_t *left,
                         init_v1_packet_info_t *header_info, uint8_t fb);
-int read_zero_rtt_header_v1(uint8_t *buffer, size_t left,
+int read_zero_rtt_header_v1(uint8_t **buffer, size_t *left,
                             zero_rtt_v1_packet_info_t *header_info, uint8_t fb);
-int read_handshake_header_v1(uint8_t *buffer, size_t left,
+int read_handshake_header_v1(uint8_t **buffer, size_t *left,
                              handshake_v1_packet_info_t *header_info,
                              uint8_t fb);
-int read_retry_header_v1(uint8_t *buffer, size_t left,
+int read_retry_header_v1(uint8_t **buffer, size_t *left,
                          retry_v1_packet_info_t *header_info);
 
 #endif // HEADER_H
