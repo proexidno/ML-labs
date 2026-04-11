@@ -4,7 +4,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define QUIC_VERSION 0x00000001
+uint32_t QUIC_SUPPORTED_VERSIONS[] = {0x00000001};
+size_t QUIC_SUPPORTED_VERSIONS_LENGTH =
+    sizeof(QUIC_SUPPORTED_VERSIONS) / sizeof(*QUIC_SUPPORTED_VERSIONS);
 
 typedef enum {
   QUIC_PACKET_INITIAL = 0x00,
@@ -177,7 +179,6 @@ typedef struct {
  */
 typedef struct {
   quic_long_header_type_t long_header_type;
-  uint32_t version;
   uint8_t dst_conn_id_length; // in bytes
   uint8_t dst_conn_id[20];
   uint8_t src_conn_id_length; // in bytes

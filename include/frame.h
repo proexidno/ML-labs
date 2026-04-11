@@ -5,6 +5,32 @@
 #include <stddef.h>
 #include <stdint.h>
 
+typedef enum {
+  PADDING = 0x00,
+  PING = 0x01,
+  ACK = 0x02,
+  ACK_ECN = 0x03,
+  RESET_STREAM = 0x04,
+  STOP_SENDING = 0x05,
+  CRYPTO = 0x06,
+  NEW_TOKEN = 0x07,
+  STREAM = 0x08,
+  MAX_DATA = 0x10,
+  MAX_STREAM_DATA = 0x11,
+  MAX_STREAMS_BI = 0x12,
+  MAX_STREAMS_UNI = 0x13,
+  DATA_BLOCKED = 0x14,
+  STREAM_DATA_BLOCKED = 0x15,
+  STREAMS_BLOCKED_BI = 0x16,
+  STREAMS_BLOCKED_UNI = 0x17,
+  NEW_CONNECTION_ID = 0x18,
+  RETIRE_CONNECTION_ID = 0x19,
+  PATH_CHALLENGE = 0x1a,
+  PATH_RESPONSE = 0x1b,
+  CONNECTION_CLOSE = 0x1c,
+  HANDSHAKE_DONE = 0x1e
+} quic_frame_types_t;
+
 typedef struct {
   varint_t largest_acked;
   varint_t ack_delay;
@@ -22,13 +48,13 @@ typedef struct {
 
 typedef struct {
   varint_t stream_id;
-  varint_t aplication_error_code;
+  varint_t application_error_code;
   varint_t final_size;
 } reset_stream_frame_t;
 
 typedef struct {
   varint_t stream_id;
-  varint_t aplication_error_code;
+  varint_t application_error_code;
 } stop_sending_frame_t;
 
 typedef struct {
@@ -49,7 +75,7 @@ typedef struct {
 
   varint_t stream_id;
   varint_t offset;
-  varint_t length;
+  varint_t length; // length should always be present
   uint8_t *data;
 } stream_frame_t;
 
@@ -117,9 +143,9 @@ typedef union {
   max_streams_frame_t max_streams_frame;
   data_blocked_frame_t data_blocked_frame;
   stream_data_blocked_frame_t stream_data_blocked_frame;
-  streams_blocked_frame_t streams_blocked_frame_t;
+  streams_blocked_frame_t streams_blocked_frame;
   new_conn_id_frame_t new_conn_id_frame;
-  retire_conn_id_frame_t retire_conn_id_frame_t;
+  retire_conn_id_frame_t retire_conn_id_frame;
   path_challenge_frame_t path_challenge_frame;
   conn_close_frame_t conn_close_frame;
 
@@ -127,5 +153,8 @@ typedef union {
 
 void free_dynamic_frame_info(varint_t type, quic_frames_t *frames);
 int frame_read_stream(uint8_t **buffer, size_t *left, quic_frames_t *frames);
+int frame_write_stream(uint8_t **buffer, size_t *left, quic_frame_types_t type,
+                       quic_frames_t *frames);
+size_t get_frame_length(quic_frame_types_t type, quic_frames_t *frames);
 
 #endif // FRAME_H

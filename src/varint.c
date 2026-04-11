@@ -1,5 +1,8 @@
 #include "varint.h"
 #include "utils.h"
+#include <stddef.h>
+#include <stdint.h>
+#include <strings.h>
 
 /*
  * buffer changed in-place, left changed in-place, dst is the result
@@ -7,13 +10,13 @@
 int varint_read_stream(uint8_t **buffer, size_t *left, varint_t *dst) {
 
   if (*left < 1) {
-    return 1;
+    return -1;
   }
   size_t length = 1 << (**buffer >> 6); // in bytes
 
   *dst = 0;
   if (stream_read_n_bytes(buffer, left, ((uint8_t *)dst), length)) {
-    return 1;
+    return -1;
   }
   *dst = *dst & ~(0b11ULL << ((length * 8) - 2)); // Skipping length bits
 
@@ -24,50 +27,59 @@ int varint_read_stream(uint8_t **buffer, size_t *left, varint_t *dst) {
  * buffer changed in-place, left changed in-place
  */
 int varint_write_stream(uint8_t **buffer, size_t *left, varint_t src) {
-  if (*left < 1) {
-    return -1;
-  }
-  size_t length;
-  varint_t val = src;
-  if (src < 0x40) {
-    length = 1;
-  } else if (src < 0x4000) {
-    val |= 0b01 << 14;
-    length = 2;
-  } else if (src < 0x40000000) {
-    val |= 0b10 << 30;
-    length = 4;
-  } else if (src <= MAX_VARINT) {
-    val |= 0b11ULL << 62;
-    length = 8;
-  } else {
-    // Larger than 2^62 - 1
-    return -1;
-  }
-  if (length > *left) {
+  size_t length = 0;
+  varint_t val = 0;
+  if (get_varint_length(src, &length, &val)) {
     return -1;
   }
 
-  // network order (in case 8 all cases run; case 4 skips 8; case 2 skips 4, 8;)
-  switch (length) {
-  case 8:
-    (*buffer)[7] = (uint8_t)val;
-    (*buffer)[6] = (uint8_t)(val >> 8);
-    (*buffer)[5] = (uint8_t)(val >> 16);
-    (*buffer)[4] = (uint8_t)(val >> 24);
-    val >>= 32;
-  case 4:
-    (*buffer)[3] = (uint8_t)val;
-    (*buffer)[2] = (uint8_t)(val >> 8);
-    val >>= 16;
-  case 2:
-    (*buffer)[1] = (uint8_t)val;
-    (*buffer)[0] = (uint8_t)(val >> 8);
-    val >>= 8;
-  case 1:
-    (*buffer)[0] = (uint8_t)val;
+  if (stream_write_n_bytes(buffer, left, ((uint8_t *)&val) + 8 - length,
+                           length)) {
+    return -1;
   }
-  *buffer += length;
-  *left -= length;
+
   return length;
+}
+
+/*
+ * Get varint length and optionally the varint representation
+ *
+ * Unencoded varint in src
+ * Adds varint length to the variable storred in *length
+ * Optionally you can pass address where the encoded varint value will be
+ * storred (NOTE: dst should be initialized as 0) or pass NULL if not needed
+ *
+ * Returens 0 if succesful
+ * Anything bellow zero should be considered an error
+ */
+int get_varint_length(varint_t src, size_t *length, varint_t *dst) {
+  if (src > MAX_VARINT) {
+    return -1;
+  }
+
+  uint32_t length_step = (src >= 0x40) + (src >= 0x4000) +
+                         (src >= 0x40000000); // avoiding branching
+  *length += 1 << length_step;
+
+  if (dst != NULL) {
+    *dst = src | VARINT_PREFIXES[length_step];
+  }
+
+  return 0;
+}
+
+int get_varint_array_length(varint_t *src, size_t length, size_t *sum) {
+  varint_t *end = src + length;
+  while (src != end) {
+    if (*src > MAX_VARINT) {
+      return -1;
+    }
+
+    uint32_t length_step = (*src >= 0x40) + (*src >= 0x4000) +
+                           (*src >= 0x40000000); // avoiding branching
+    *sum += 1 << length_step;
+    src++;
+  }
+
+  return 0;
 }

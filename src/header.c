@@ -2,7 +2,6 @@
 #include "errors.h"
 #include "utils.h"
 #include "varint.h"
-#include <bits/pthreadtypes.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -44,8 +43,7 @@ int header_read_stream(uint8_t **buffer, size_t *left,
     exit_code =
         read_short_header_v1(buffer, left, headers->short_header_v1, fb);
     if (exit_code < 0) {
-      free(headers->short_header_v1);
-      headers->short_header_v1 = NULL;
+      free_header(1, headers);
       return exit_code;
     }
     return 1;
@@ -121,19 +119,16 @@ int read_long_header(uint8_t **buffer, size_t *left, quic_headers_t *headers,
     exit_code = read_version_header(buffer, left,
                                     headers->version_negotiation_header, fb);
     if (exit_code < 0) {
-      free(headers->version_negotiation_header);
-      headers->long_header_v1 = NULL;
+      free_header(0, headers);
       return exit_code;
     }
     return 0;
     break;
   case 1:
     headers->long_header_v1 = calloc(1, sizeof(long_header_v1_t));
-    headers->long_header_v1->version = 1;
     exit_code = read_long_header_v1(buffer, left, headers->long_header_v1, fb);
     if (exit_code < 0) {
-      free(headers->long_header_v1);
-      headers->long_header_v1 = NULL;
+      free_header(1, headers);
       return exit_code;
     }
     return 2;
@@ -145,7 +140,6 @@ int read_long_header(uint8_t **buffer, size_t *left, quic_headers_t *headers,
 
 int read_long_header_v1(uint8_t **buffer, size_t *left,
                         long_header_v1_t *header, uint8_t fb) {
-
   if (stream_read_n_bytes(buffer, left, &header->dst_conn_id_length,
                           sizeof(header->dst_conn_id_length)))
     return DISCARD_PACKET;
@@ -471,26 +465,34 @@ void free_header(int type, quic_headers_t *headers) {
     switch (header->long_header_type) {
     case QUIC_PACKET_INITIAL: {
       init_v1_packet_info_t *header_info = header->init_v1_packet;
-      if (header_info->token != NULL)
+      if (header_info->token != NULL) {
         free(header_info->token);
+        header_info->token = NULL;
+      }
       break;
     }
     case QUIC_PACKET_0RTT: {
       zero_rtt_v1_packet_info_t *header_info = header->zero_rtt_v1_packet;
-      if (header_info->token != NULL)
+      if (header_info->token != NULL) {
         free(header_info->token);
+        header_info->token = NULL;
+      }
       break;
     }
     case QUIC_PACKET_HANDSHAKE: {
       handshake_v1_packet_info_t *header_info = header->handshake_v1_packet;
-      if (header_info->token != NULL)
+      if (header_info->token != NULL) {
         free(header_info->token);
+        header_info->token = NULL;
+      }
       break;
     }
     case QUIC_PACKET_RETRY: {
       retry_v1_packet_info_t *header_info = header->retry_v1_packet;
-      if (header_info->retry_token != NULL)
+      if (header_info->retry_token != NULL) {
         free(header_info->retry_token);
+        header_info->retry_token = NULL;
+      }
       break;
     }
     }
@@ -499,4 +501,5 @@ void free_header(int type, quic_headers_t *headers) {
   }
 
   free(headers->freable);
+  headers->freable = NULL;
 }

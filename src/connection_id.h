@@ -1,0 +1,7 @@
+#ifndef CONNECTION_ID_H
+#define CONNECTION_ID_H
+
+#define MAX_CONN_ID_LENGTH 20
+#define MIN_CONN_ID_LENGTH 1
+
+#endif // CONNECTION_ID_H

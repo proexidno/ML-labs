@@ -6,5 +6,7 @@
 
 int stream_read_n_bytes(uint8_t **buffer, size_t *left, uint8_t *dst,
                         size_t count);
+int stream_write_n_bytes(uint8_t **buffer, size_t *left, uint8_t *src,
+                         size_t count);
 
 #endif // UTILS_H
