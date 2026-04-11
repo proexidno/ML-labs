@@ -16,9 +16,8 @@
  *
  * Returns negative value if error has occured
  *
- * Returns 0 if version negotiation packet is read
- * Returns 1 if short header v1 is read
- * Returns 2 if long  header v1 is read
+ * Returns quic_header_type_t if succesful
+ *
  */
 int header_read_stream(uint8_t **buffer, size_t *left,
                        quic_headers_t *headers) {
@@ -46,7 +45,7 @@ int header_read_stream(uint8_t **buffer, size_t *left,
       free_header(1, headers);
       return exit_code;
     }
-    return 1;
+    return SHORT_HEADER_V1;
     break;
   case 0x80: // long header
     exit_code = read_long_header(buffer, left, headers, fb);
@@ -122,7 +121,7 @@ int read_long_header(uint8_t **buffer, size_t *left, quic_headers_t *headers,
       free_header(0, headers);
       return exit_code;
     }
-    return 0;
+    return VERSION_NEGOTIATION_HEADER;
     break;
   case 1:
     headers->long_header_v1 = calloc(1, sizeof(long_header_v1_t));
@@ -131,7 +130,7 @@ int read_long_header(uint8_t **buffer, size_t *left, quic_headers_t *headers,
       free_header(1, headers);
       return exit_code;
     }
-    return 2;
+    return LONG_HEADER_V1;
     break;
   default:
     return UNSUPPORTED_VERSION;
