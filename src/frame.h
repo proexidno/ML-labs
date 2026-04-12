@@ -34,8 +34,9 @@ typedef enum {
 typedef struct {
   varint_t largest_acked;
   varint_t ack_delay;
-  varint_t ack_range_length;
-  varint_t *ack_ranges;
+  varint_t ack_range_count;
+  varint_t *ack_lengths; // length of ack_range_count + 1
+  varint_t *ack_gaps;    // length of exactly ack_range_count
 } ack_frame_t;
 
 typedef struct {

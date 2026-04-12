@@ -13,7 +13,9 @@
  *
  * Changes buffer and left in-place
  *
- * Headers should be initialized on stack or in dynamic memory
+ * Frames should be initialized on stack or in dynamic memory with all bits
+ set
+ * to zero
  * Call free_dynamic_frame_info before freing or exiting the scope
  *
  * Returns negative value if error has occured
@@ -32,7 +34,6 @@ int frame_read_stream(uint8_t **buffer, size_t *left, quic_frames_t *frames) {
   case PING:
     break;
   case ACK: {
-    varint_t ack_range_count = 0;
     ack_frame_t *frame = &frames->ack_frame;
     if (varint_read_stream(buffer, left, &frame->largest_acked)) {
       return FRAME_ENCODING_ERROR;
@@ -40,19 +41,33 @@ int frame_read_stream(uint8_t **buffer, size_t *left, quic_frames_t *frames) {
     if (varint_read_stream(buffer, left, &frame->ack_delay)) {
       return FRAME_ENCODING_ERROR;
     }
-    if (varint_read_stream(buffer, left, &ack_range_count)) {
+    if (varint_read_stream(buffer, left, &frame->ack_range_count)) {
       return FRAME_ENCODING_ERROR;
     }
-    frame->ack_ranges =
-        calloc(1 + ack_range_count * 2, sizeof(*frame->ack_ranges));
-    if (frame->ack_ranges == NULL) {
+
+    frame->ack_lengths =
+        calloc(1 + frame->ack_range_count, sizeof(*frame->ack_lengths));
+    if (frame->ack_lengths == NULL) {
+      return MALLOC_FAIL;
+    }
+    frame->ack_gaps = calloc(frame->ack_range_count, sizeof(*frame->ack_gaps));
+    if (frame->ack_gaps == NULL) {
+      free_dynamic_frame_info(type, frames);
       return MALLOC_FAIL;
     }
 
-    varint_t *pointer = frame->ack_ranges;
-    varint_t *end = pointer + 1 + 2 * ack_range_count;
-    while (pointer < end) {
-      if (varint_read_stream(buffer, left, pointer++)) {
+    varint_t *lengths = frame->ack_lengths, *gaps = frame->ack_gaps;
+    if (varint_read_stream(buffer, left, lengths++)) {
+      free_dynamic_frame_info(type, frames);
+      return FRAME_ENCODING_ERROR;
+    }
+
+    for (size_t i = 0; i < frame->ack_range_count; i++) {
+      if (varint_read_stream(buffer, left, gaps++)) {
+        free_dynamic_frame_info(type, frames);
+        return FRAME_ENCODING_ERROR;
+      }
+      if (varint_read_stream(buffer, left, lengths++)) {
         free_dynamic_frame_info(type, frames);
         return FRAME_ENCODING_ERROR;
       }
@@ -61,7 +76,6 @@ int frame_read_stream(uint8_t **buffer, size_t *left, quic_frames_t *frames) {
     break;
   }
   case ACK_ECN: {
-    varint_t ack_range_count = 0;
     ack_ecn_frame_t *frame = &frames->ack_ecn_frame;
     if (varint_read_stream(buffer, left, &frame->ack_frame.largest_acked)) {
       return FRAME_ENCODING_ERROR;
@@ -69,19 +83,36 @@ int frame_read_stream(uint8_t **buffer, size_t *left, quic_frames_t *frames) {
     if (varint_read_stream(buffer, left, &frame->ack_frame.ack_delay)) {
       return FRAME_ENCODING_ERROR;
     }
-    if (varint_read_stream(buffer, left, &ack_range_count)) {
+    if (varint_read_stream(buffer, left, &frame->ack_frame.ack_range_count)) {
       return FRAME_ENCODING_ERROR;
     }
-    frame->ack_frame.ack_ranges =
-        calloc(1 + ack_range_count * 2, sizeof(*frame->ack_frame.ack_ranges));
-    if (frame->ack_frame.ack_ranges == NULL) {
+
+    frame->ack_frame.ack_lengths =
+        calloc(1 + frame->ack_frame.ack_range_count,
+               sizeof(*frame->ack_frame.ack_lengths));
+    if (frame->ack_frame.ack_lengths == NULL) {
+      return MALLOC_FAIL;
+    }
+    frame->ack_frame.ack_gaps = calloc(frame->ack_frame.ack_range_count,
+                                       sizeof(*frame->ack_frame.ack_gaps));
+    if (frame->ack_frame.ack_gaps == NULL) {
+      free_dynamic_frame_info(type, frames);
       return MALLOC_FAIL;
     }
 
-    varint_t *pointer = frame->ack_frame.ack_ranges;
-    varint_t *end = pointer + 1 + 2 * ack_range_count;
-    while (pointer < end) {
-      if (varint_read_stream(buffer, left, pointer++)) {
+    varint_t *lengths = frame->ack_frame.ack_lengths,
+             *gaps = frame->ack_frame.ack_gaps;
+    if (varint_read_stream(buffer, left, lengths++)) {
+      free_dynamic_frame_info(type, frames);
+      return FRAME_ENCODING_ERROR;
+    }
+
+    for (size_t i = 0; i < frame->ack_frame.ack_range_count; i++) {
+      if (varint_read_stream(buffer, left, gaps++)) {
+        free_dynamic_frame_info(type, frames);
+        return FRAME_ENCODING_ERROR;
+      }
+      if (varint_read_stream(buffer, left, lengths++)) {
         free_dynamic_frame_info(type, frames);
         return FRAME_ENCODING_ERROR;
       }
@@ -379,25 +410,22 @@ int frame_write_stream(uint8_t **buffer, size_t *left, quic_frame_types_t type,
       return FRAME_ENCODING_ERROR;
     }
 
-    if (frame->ack_range_length % 2 != 1) {
-      return FRAME_ENCODING_ERROR;
-    }
-    if (varint_write_stream(&pointer, &l, frame->ack_range_length / 2)) {
+    if (varint_write_stream(&pointer, &l, frame->ack_range_count)) {
       return FRAME_ENCODING_ERROR;
     }
 
-    // More eddiceint approach, I think
-    size_t needed_length = 0;
-    if (get_varint_array_length(frame->ack_ranges, frame->ack_range_length,
-                                &needed_length)) {
-      return FRAME_ENCODING_ERROR;
-    }
-    if (*left < needed_length) {
+    varint_t *lengths = frame->ack_lengths, *gaps = frame->ack_gaps;
+    if (varint_write_stream(&pointer, &l, *(frame->ack_lengths++))) {
       return FRAME_ENCODING_ERROR;
     }
 
-    for (size_t i = 0; i < frame->ack_range_length; i++) {
-      varint_write_stream(&pointer, &l, frame->ack_ranges[i]);
+    for (size_t i = 0; i < frame->ack_range_count; i++) {
+      if (varint_write_stream(&pointer, &l, *(frame->ack_gaps++))) {
+        return FRAME_ENCODING_ERROR;
+      }
+      if (varint_write_stream(&pointer, &l, *(frame->ack_lengths++))) {
+        return FRAME_ENCODING_ERROR;
+      }
     }
 
     break;
@@ -414,28 +442,24 @@ int frame_write_stream(uint8_t **buffer, size_t *left, quic_frame_types_t type,
       return FRAME_ENCODING_ERROR;
     }
 
-    if (frame->ack_frame.ack_range_length % 2 != 1) {
-      return FRAME_ENCODING_ERROR;
-    }
-    if (varint_write_stream(&pointer, &l,
-                            frame->ack_frame.ack_range_length / 2)) {
+    if (varint_write_stream(&pointer, &l, frame->ack_frame.ack_range_count)) {
       return FRAME_ENCODING_ERROR;
     }
 
-    // More eddiceint approach, I think
-    size_t needed_length = 0;
-    if (get_varint_array_length(frame->ack_frame.ack_ranges,
-                                frame->ack_frame.ack_range_length,
-                                &needed_length)) {
-      return FRAME_ENCODING_ERROR;
-    }
-    if (*left <
-        needed_length + 3) { // + 3 because minimum 3 bytes with ecn counts
+    varint_t *lengths = frame->ack_frame.ack_lengths,
+             *gaps = frame->ack_frame.ack_gaps;
+    if (varint_write_stream(&pointer, &l, *(frame->ack_frame.ack_lengths++))) {
       return FRAME_ENCODING_ERROR;
     }
 
-    for (size_t i = 0; i < frame->ack_frame.ack_range_length; i++) {
-      varint_write_stream(&pointer, &l, frame->ack_frame.ack_ranges[i]);
+    for (size_t i = 0; i < frame->ack_frame.ack_range_count; i++) {
+      if (varint_write_stream(&pointer, &l, *(frame->ack_frame.ack_gaps++))) {
+        return FRAME_ENCODING_ERROR;
+      }
+      if (varint_write_stream(&pointer, &l,
+                              *(frame->ack_frame.ack_lengths++))) {
+        return FRAME_ENCODING_ERROR;
+      }
     }
 
     if (varint_write_stream(&pointer, &l, frame->ecn0_count)) {
@@ -730,21 +754,18 @@ size_t get_frame_length(quic_frame_types_t type, quic_frames_t *frames) {
   case PING:
     get_varint_length(
         type, &length,
-        NULL); // in case of variable type (like STREAM) being one length with
-               // some flags and another length with others
+        NULL); // in case of variable type (like STREAM) being one length
+    // with some flags and another length with others
     break;
   case ACK: {
     get_varint_length(type, &length, NULL);
     ack_frame_t *frame = &frames->ack_frame;
     get_varint_length(frame->largest_acked, &length, NULL);
     get_varint_length(frame->ack_delay, &length, NULL);
-    if (frame->ack_range_length % 2 != 1) {
-      return 0;
-    }
-    varint_t ack_range_count = frame->ack_range_length / 2;
-    get_varint_length(ack_range_count, &length, NULL);
-    get_varint_array_length(frame->ack_ranges, frame->ack_range_length,
+    get_varint_length(frame->ack_range_count, &length, NULL);
+    get_varint_array_length(frame->ack_lengths, frame->ack_range_count,
                             &length);
+    get_varint_array_length(frame->ack_gaps, frame->ack_range_count, &length);
     break;
   }
   case ACK_ECN: {
@@ -752,13 +773,11 @@ size_t get_frame_length(quic_frame_types_t type, quic_frames_t *frames) {
     ack_ecn_frame_t *frame = &frames->ack_ecn_frame;
     get_varint_length(frame->ack_frame.largest_acked, &length, NULL);
     get_varint_length(frame->ack_frame.ack_delay, &length, NULL);
-    if (frame->ack_frame.ack_range_length % 2 != 1) {
-      return 0;
-    }
-    varint_t ack_range_count = frame->ack_frame.ack_range_length / 2;
-    get_varint_length(ack_range_count, &length, NULL);
-    get_varint_array_length(frame->ack_frame.ack_ranges,
-                            frame->ack_frame.ack_range_length, &length);
+    get_varint_length(frame->ack_frame.ack_range_count, &length, NULL);
+    get_varint_array_length(frame->ack_frame.ack_lengths,
+                            frame->ack_frame.ack_range_count, &length);
+    get_varint_array_length(frame->ack_frame.ack_gaps,
+                            frame->ack_frame.ack_range_count, &length);
 
     get_varint_length(frame->ecn0_count, &length, NULL);
     get_varint_length(frame->ecn1_count, &length, NULL);
@@ -914,18 +933,25 @@ void free_dynamic_frame_info(varint_t type, quic_frames_t *frames) {
   switch (type) {
   case ACK: {
     ack_frame_t *frame = &frames->ack_frame;
-    if (frame->ack_ranges != NULL) {
-      free(frame->ack_ranges);
-      frame->ack_ranges = NULL;
+    if (frame->ack_lengths != NULL) {
+      free(frame->ack_lengths);
+      frame->ack_lengths = NULL;
+    }
+    if (frame->ack_gaps != NULL) {
+      free(frame->ack_gaps);
+      frame->ack_gaps = NULL;
     }
     break;
   }
   case ACK_ECN: {
     ack_ecn_frame_t *frame = &frames->ack_ecn_frame;
-    if (frame->ack_frame.ack_ranges != NULL) {
-
-      free(frame->ack_frame.ack_ranges);
-      frame->ack_frame.ack_ranges = NULL;
+    if (frame->ack_frame.ack_lengths != NULL) {
+      free(frame->ack_frame.ack_lengths);
+      frame->ack_frame.ack_lengths = NULL;
+    }
+    if (frame->ack_frame.ack_gaps != NULL) {
+      free(frame->ack_frame.ack_gaps);
+      frame->ack_frame.ack_gaps = NULL;
     }
     break;
   }
