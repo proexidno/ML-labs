@@ -9,10 +9,10 @@ typedef uint64_t varint_t;
 #define MAX_VARINT 0x3fffffffffffffff // 2^61 - 1
 
 static const uint64_t VARINT_PREFIXES[] = {
-    0x00 << 6,    // length of 1
-    0b01 << 14,   // length of 2
-    0b10 << 30,   // length of 4
-    0b11ULL << 62 // length of 8
+    0x00 << 6,     // length of 1
+    0b01 << 14,    // length of 2
+    0b10ULL << 30, // length of 4
+    0b11ULL << 62  // length of 8
 };
 
 int varint_read_stream(uint8_t **buffer, size_t *left, varint_t *dst);

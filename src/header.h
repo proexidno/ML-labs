@@ -4,8 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-uint32_t QUIC_SUPPORTED_VERSIONS[] = {0x00000001};
-size_t QUIC_SUPPORTED_VERSIONS_LENGTH =
+const uint32_t QUIC_SUPPORTED_VERSIONS[] = {0x00000001};
+const size_t QUIC_SUPPORTED_VERSIONS_LENGTH =
     sizeof(QUIC_SUPPORTED_VERSIONS) / sizeof(*QUIC_SUPPORTED_VERSIONS);
 
 typedef enum {
